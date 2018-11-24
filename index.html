@@ -5,17 +5,44 @@
   <meta charset="UTF-8">
   <title>Port Example</title>
   <script src="elm.js"></script>
+  <style type="text/css">
+    label {
+      display: block;
+      margin-top: 5px;
+    }
+    button {
+      margin: 5px;
+    }
+  </style>
 </head>
 
 <body>
   <div id="elm"></div>
 
   <script>
-    let flags = { count: 0 }
-    var node = document.getElementById('elm');
+    let flags = ''
+    let node = document.getElementById('elm');
     var app = Elm.Main.init({node: node, flags: flags});
-    app.ports.cache.subscribe(function(data){
-      localStorage.setItem('cache', JSON.stringify(data));
+    app.ports.setLocalStorageItem.subscribe(function(item){
+      localStorage.setItem(item.key, item.value);
+    })
+    app.ports.getLocalStorageItem.subscribe(function(key){
+      let value = localStorage.getItem(key) || 'null';
+      app.ports.gotLocalStorageItem.send({key: key, value: value});
+    })
+    app.ports.removeLocalStorageItem.subscribe(function(key){
+      localStorage.removeItem(key);
+    })
+    app.ports.clearLocalStorage.subscribe(function(){
+      localStorage.clear();
+    })
+    app.ports.getCookies.subscribe(function(){
+      let cookies = document.cookie;
+      app.ports.gotCookies.send(cookies);
+    })
+    app.ports.setCookie.subscribe(function(cookieObj){
+      let cookie = `${cookieObj.key}=${cookieObj.value}`;
+      document.cookie=cookie;
     })
   </script>
 </body>
