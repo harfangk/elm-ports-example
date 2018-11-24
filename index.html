@@ -1,0 +1,22 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Port Example</title>
+  <script src="elm.js"></script>
+</head>
+
+<body>
+  <div id="elm"></div>
+
+  <script>
+    let flags = { count: 0 }
+    var node = document.getElementById('elm');
+    var app = Elm.Main.init({node: node, flags: flags});
+    app.ports.cache.subscribe(function(data){
+      localStorage.setItem('cache', JSON.stringify(data));
+    })
+  </script>
+</body>
+</html>
