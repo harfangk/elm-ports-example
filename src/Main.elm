@@ -4,6 +4,8 @@ import Browser
 import Html exposing (Html, br, button, div, form, input, label, p, text)
 import Html.Attributes exposing (type_, value)
 import Html.Events exposing (onClick, onInput)
+import Json.Decode as JD
+import Json.Encode as JE
 
 
 type alias Model =
@@ -18,6 +20,10 @@ type alias Model =
 
 type alias Flags =
     String
+
+
+type alias KV =
+    { key : String, value : String }
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -45,7 +51,8 @@ type Msg
     | SetCookie
     | GetCookies
     | GotCookies String
-    | GotLocalStorageItem { key : String, value : String }
+    | GotLocalStorageItem KV
+    | GotPortMsg (Result JD.Error Msg)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -64,28 +71,87 @@ update msg model =
             ( { model | value = value }, Cmd.none )
 
         SetLocalStorageItem ->
-            ( model, setLocalStorageItem { key = model.keyForSetItem, value = model.value } )
+            let
+                payload =
+                    JE.object
+                        [ ( "key", JE.string model.keyForSetItem )
+                        , ( "value", JE.string model.value )
+                        ]
+
+                portMsg =
+                    JE.object
+                        [ ( "method", JE.string "setLocalStorageItem" )
+                        , ( "payload", payload )
+                        ]
+            in
+            ( model, sendPortMsg portMsg )
 
         GetLocalStorageItem ->
-            ( model, getLocalStorageItem model.keyForGetItem )
+            let
+                portMsg =
+                    JE.object
+                        [ ( "method", JE.string "getLocalStorageItem" )
+                        , ( "payload", JE.string model.keyForGetItem )
+                        ]
+            in
+            ( model, sendPortMsg portMsg )
 
         ClearLocalStorage ->
-            ( model, clearLocalStorage () )
+            let
+                portMsg =
+                    JE.object
+                        [ ( "method", JE.string "clearLocalStorage" )
+                        ]
+            in
+            ( model, sendPortMsg portMsg )
 
         RemoveLocalStorageItem ->
-            ( model, removeLocalStorageItem model.keyForRemoveItem )
+            let
+                portMsg =
+                    JE.object
+                        [ ( "method", JE.string "removeLocalStorageItem" )
+                        , ( "payload", JE.string model.keyForRemoveItem )
+                        ]
+            in
+            ( model, sendPortMsg portMsg )
 
         GetCookies ->
-            ( model, getCookies () )
+            let
+                portMsg =
+                    JE.object
+                        [ ( "method", JE.string "getCookies" ) ]
+            in
+            ( model, sendPortMsg portMsg )
 
         SetCookie ->
-            ( model, setCookie { key = model.keyForSetItem, value = model.value } )
+            let
+                payload =
+                    JE.object
+                        [ ( "key", JE.string model.keyForSetItem )
+                        , ( "value", JE.string model.value )
+                        ]
+
+                portMsg =
+                    JE.object
+                        [ ( "method", JE.string "setCookie" )
+                        , ( "payload", payload )
+                        ]
+            in
+            ( model, sendPortMsg portMsg )
 
         GotLocalStorageItem { key, value } ->
             ( { model | receivedItem = key ++ "=" ++ value }, Cmd.none )
 
         GotCookies cookies ->
             ( { model | cookies = cookies }, Cmd.none )
+
+        GotPortMsg result ->
+            case result of
+                Ok portMsg ->
+                    update portMsg model
+
+                Err jdError ->
+                    ( model, Cmd.none )
 
 
 view : Model -> Html Msg
@@ -124,34 +190,47 @@ view model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.batch
-        [ gotLocalStorageItem GotLocalStorageItem
-        , gotCookies GotCookies
-        ]
+    gotPortMsg (JD.decodeValue portMsgDecoder >> GotPortMsg)
 
 
-port setLocalStorageItem : { key : String, value : String } -> Cmd msg
+
+-- Ports
 
 
-port getLocalStorageItem : String -> Cmd msg
+port sendPortMsg : JE.Value -> Cmd msg
 
 
-port gotLocalStorageItem : ({ key : String, value : String } -> msg) -> Sub msg
+port gotPortMsg : (JE.Value -> msg) -> Sub msg
 
 
-port removeLocalStorageItem : String -> Cmd msg
+
+-- Port Decoders
 
 
-port clearLocalStorage : () -> Cmd msg
+portMsgDecoder : JD.Decoder Msg
+portMsgDecoder =
+    JD.field "method" JD.string
+        |> JD.andThen portMsgDecoder_
 
 
-port getCookies : () -> Cmd msg
+portMsgDecoder_ : String -> JD.Decoder Msg
+portMsgDecoder_ method =
+    case method of
+        "gotLocalStorageItem" ->
+            JD.map GotLocalStorageItem (JD.field "payload" kvDecoder)
+
+        "gotCookies" ->
+            JD.map GotCookies (JD.field "payload" (JD.field "cookies" JD.string))
+
+        _ ->
+            JD.fail "Got unregistered method for port message"
 
 
-port gotCookies : (String -> msg) -> Sub msg
-
-
-port setCookie : { key : String, value : String } -> Cmd msg
+kvDecoder : JD.Decoder KV
+kvDecoder =
+    JD.map2 KV
+        (JD.field "key" JD.string)
+        (JD.field "value" JD.string)
 
 
 main : Program Flags Model Msg

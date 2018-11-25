@@ -23,26 +23,31 @@
     let flags = ''
     let node = document.getElementById('elm');
     var app = Elm.Main.init({node: node, flags: flags});
-    app.ports.setLocalStorageItem.subscribe(function(item){
-      localStorage.setItem(item.key, item.value);
-    })
-    app.ports.getLocalStorageItem.subscribe(function(key){
-      let value = localStorage.getItem(key) || 'null';
-      app.ports.gotLocalStorageItem.send({key: key, value: value});
-    })
-    app.ports.removeLocalStorageItem.subscribe(function(key){
-      localStorage.removeItem(key);
-    })
-    app.ports.clearLocalStorage.subscribe(function(){
-      localStorage.clear();
-    })
-    app.ports.getCookies.subscribe(function(){
-      let cookies = document.cookie;
-      app.ports.gotCookies.send(cookies);
-    })
-    app.ports.setCookie.subscribe(function(cookieObj){
-      let cookie = `${cookieObj.key}=${cookieObj.value}`;
-      document.cookie=cookie;
+    app.ports.sendPortMsg.subscribe(function(msg){
+      let method = msg.method;
+      switch (method) {
+        case 'setLocalStorageItem':
+          localStorage.setItem(msg.payload.key, msg.payload.value);
+          break;
+        case 'getLocalStorageItem':
+          let value = localStorage.getItem(msg.payload) || 'null';
+          app.ports.gotPortMsg.send({method: 'gotLocalStorageItem', payload: {key: msg.payload, value: value}});
+          break;
+        case 'removeLocalStorageItem':
+          localStorage.removeItem(msg.payload);
+          break;
+        case 'clearLocalStorage':
+          localStorage.clear();
+          break;
+        case 'getCookies':
+          let cookies = document.cookie;
+          app.ports.gotPortMsg.send({method: 'gotCookies', payload: {cookies: cookies}});
+          break;
+        case 'setCookie':
+          let cookie = `${msg.payload.key}=${msg.payload.value}`;
+          document.cookie=cookie;
+          break;
+      }
     })
   </script>
 </body>
