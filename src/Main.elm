@@ -1,9 +1,16 @@
-port module Main exposing (main)
+module Main exposing (main)
 
 import Browser
 import Html exposing (Html, br, button, div, form, input, label, p, text)
 import Html.Attributes exposing (type_, value)
 import Html.Events exposing (onClick, onInput)
+import Json.Decode as JD
+import Json.Encode as JE
+import Port
+
+
+
+-- Model
 
 
 type alias Model =
@@ -20,6 +27,10 @@ type alias Flags =
     String
 
 
+
+-- Init
+
+
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { cookies = ""
@@ -31,6 +42,10 @@ init flags =
       }
     , Cmd.none
     )
+
+
+
+-- Update
 
 
 type Msg
@@ -45,7 +60,8 @@ type Msg
     | SetCookie
     | GetCookies
     | GotCookies String
-    | GotLocalStorageItem { key : String, value : String }
+    | GotLocalStorageItem { key : String, value : Maybe String }
+    | GotPortMsg (Result JD.Error Port.InboundMethod)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -64,28 +80,74 @@ update msg model =
             ( { model | value = value }, Cmd.none )
 
         SetLocalStorageItem ->
-            ( model, setLocalStorageItem { key = model.keyForSetItem, value = model.value } )
+            let
+                portMsg =
+                    Port.SetLocalStorageItem { key = model.keyForSetItem, value = model.value }
+                        |> Port.encode
+            in
+            ( model, Port.sendPortMsg portMsg )
 
         GetLocalStorageItem ->
-            ( model, getLocalStorageItem model.keyForGetItem )
+            let
+                portMsg =
+                    Port.GetLocalStorageItem { key = model.keyForGetItem }
+                        |> Port.encode
+            in
+            ( model, Port.sendPortMsg portMsg )
 
         ClearLocalStorage ->
-            ( model, clearLocalStorage () )
+            let
+                portMsg =
+                    Port.ClearLocalStorage |> Port.encode
+            in
+            ( model, Port.sendPortMsg portMsg )
 
         RemoveLocalStorageItem ->
-            ( model, removeLocalStorageItem model.keyForRemoveItem )
+            let
+                portMsg =
+                    Port.RemoveLocalStorageItem { key = model.keyForRemoveItem }
+                        |> Port.encode
+            in
+            ( model, Port.sendPortMsg portMsg )
 
         GetCookies ->
-            ( model, getCookies () )
+            ( model, Port.sendPortMsg (Port.encode Port.GetCookies) )
 
         SetCookie ->
-            ( model, setCookie { key = model.keyForSetItem, value = model.value } )
+            let
+                portMsg =
+                    Port.SetCookie { key = model.keyForSetItem, value = model.value }
+                        |> Port.encode
+            in
+            ( model, Port.sendPortMsg portMsg )
 
         GotLocalStorageItem { key, value } ->
-            ( { model | receivedItem = key ++ "=" ++ value }, Cmd.none )
+            ( { model | receivedItem = key ++ "=" ++ Maybe.withDefault "null" value }, Cmd.none )
 
         GotCookies cookies ->
             ( { model | cookies = cookies }, Cmd.none )
+
+        GotPortMsg result ->
+            case result of
+                Ok inboundMethod ->
+                    update (inboundMethodToMsg inboundMethod) model
+
+                Err jdError ->
+                    ( model, Cmd.none )
+
+
+inboundMethodToMsg : Port.InboundMethod -> Msg
+inboundMethodToMsg inboundMethod =
+    case inboundMethod of
+        Port.GotLocalStorageItem kv ->
+            GotLocalStorageItem kv
+
+        Port.GotCookies cookies ->
+            GotCookies cookies
+
+
+
+-- View
 
 
 view : Model -> Html Msg
@@ -122,36 +184,17 @@ view model =
         ]
 
 
+
+-- Subscriptions
+
+
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.batch
-        [ gotLocalStorageItem GotLocalStorageItem
-        , gotCookies GotCookies
-        ]
+    Port.gotPortMsg (JD.decodeValue Port.decoder >> GotPortMsg)
 
 
-port setLocalStorageItem : { key : String, value : String } -> Cmd msg
 
-
-port getLocalStorageItem : String -> Cmd msg
-
-
-port gotLocalStorageItem : ({ key : String, value : String } -> msg) -> Sub msg
-
-
-port removeLocalStorageItem : String -> Cmd msg
-
-
-port clearLocalStorage : () -> Cmd msg
-
-
-port getCookies : () -> Cmd msg
-
-
-port gotCookies : (String -> msg) -> Sub msg
-
-
-port setCookie : { key : String, value : String } -> Cmd msg
+-- Main
 
 
 main : Program Flags Model Msg
