@@ -1,21 +1,28 @@
-port module Main exposing (main)
+module Main exposing (main)
 
 import Browser
-import Html exposing (Html, br, button, div, form, input, label, p, text)
-import Html.Attributes exposing (type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html exposing (Html, text)
 import Json.Decode as JD
 import Json.Encode as JE
+import Page.Storage
+import Port
 
 
-type alias Model =
-    { cookies : String
-    , keyForSetItem : String
-    , keyForGetItem : String
-    , keyForRemoveItem : String
-    , value : String
-    , receivedItem : String
-    }
+
+-- Model
+
+
+type Model
+    = Loading
+    | Ready Page
+    | Unavailable
+
+
+type Page
+    = Landing
+    | Storage Page.Storage.Model
+    | FAQ
+    | NotFound
 
 
 type alias Flags =
@@ -26,125 +33,43 @@ type alias KV =
     { key : String, value : String }
 
 
+
+-- Init
+
+
 init : Flags -> ( Model, Cmd Msg )
 init flags =
-    ( { cookies = ""
-      , keyForSetItem = ""
-      , keyForGetItem = ""
-      , keyForRemoveItem = ""
-      , value = ""
-      , receivedItem = ""
-      }
-    , Cmd.none
-    )
+    ( Loading, initCmd )
+
+
+initCmd : Cmd Msg
+initCmd =
+    let
+        portMsg =
+            JE.object
+                [ ( "method", JE.string "connectToServer" ) ]
+    in
+    Port.sendPortMsg portMsg
+
+
+initPage : Page
+initPage =
+    Storage Page.Storage.initModel
+
+
+
+-- Update
 
 
 type Msg
-    = EnteredSetItemKey String
-    | EnteredGetItemKey String
-    | EnteredRemoveItemKey String
-    | EnteredValue String
-    | SetLocalStorageItem
-    | GetLocalStorageItem
-    | RemoveLocalStorageItem
-    | ClearLocalStorage
-    | SetCookie
-    | GetCookies
-    | GotCookies String
-    | GotLocalStorageItem KV
+    = ConnectedToServer
     | GotPortMsg (Result JD.Error Msg)
+    | GotStorageMsg Page.Storage.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        EnteredSetItemKey key ->
-            ( { model | keyForSetItem = key }, Cmd.none )
-
-        EnteredGetItemKey key ->
-            ( { model | keyForGetItem = key }, Cmd.none )
-
-        EnteredRemoveItemKey key ->
-            ( { model | keyForRemoveItem = key }, Cmd.none )
-
-        EnteredValue value ->
-            ( { model | value = value }, Cmd.none )
-
-        SetLocalStorageItem ->
-            let
-                payload =
-                    JE.object
-                        [ ( "key", JE.string model.keyForSetItem )
-                        , ( "value", JE.string model.value )
-                        ]
-
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "setLocalStorageItem" )
-                        , ( "payload", payload )
-                        ]
-            in
-            ( model, sendPortMsg portMsg )
-
-        GetLocalStorageItem ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "getLocalStorageItem" )
-                        , ( "payload", JE.string model.keyForGetItem )
-                        ]
-            in
-            ( model, sendPortMsg portMsg )
-
-        ClearLocalStorage ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "clearLocalStorage" )
-                        ]
-            in
-            ( model, sendPortMsg portMsg )
-
-        RemoveLocalStorageItem ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "removeLocalStorageItem" )
-                        , ( "payload", JE.string model.keyForRemoveItem )
-                        ]
-            in
-            ( model, sendPortMsg portMsg )
-
-        GetCookies ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "getCookies" ) ]
-            in
-            ( model, sendPortMsg portMsg )
-
-        SetCookie ->
-            let
-                payload =
-                    JE.object
-                        [ ( "key", JE.string model.keyForSetItem )
-                        , ( "value", JE.string model.value )
-                        ]
-
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "setCookie" )
-                        , ( "payload", payload )
-                        ]
-            in
-            ( model, sendPortMsg portMsg )
-
-        GotLocalStorageItem { key, value } ->
-            ( { model | receivedItem = key ++ "=" ++ value }, Cmd.none )
-
-        GotCookies cookies ->
-            ( { model | cookies = cookies }, Cmd.none )
-
         GotPortMsg result ->
             case result of
                 Ok portMsg ->
@@ -153,54 +78,70 @@ update msg model =
                 Err jdError ->
                     ( model, Cmd.none )
 
+        otherMsg ->
+            case model of
+                Loading ->
+                    case otherMsg of
+                        ConnectedToServer ->
+                            ( Ready initPage, Cmd.none )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                Unavailable ->
+                    ( model, Cmd.none )
+
+                Ready page ->
+                    case ( otherMsg, page ) of
+                        ( GotStorageMsg storageMsg, Storage storageModel ) ->
+                            Page.Storage.update storageMsg storageModel
+                                |> Tuple.mapBoth (Storage >> Ready) (Cmd.map GotStorageMsg)
+
+                        _ ->
+                            ( model, Cmd.none )
+
+
+
+-- View
+
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ div []
-            [ form []
-                [ label [] [ text "Key: ", input [ onInput EnteredSetItemKey, value model.keyForSetItem ] [] ]
-                , label [] [ text "Value: ", input [ onInput EnteredValue, value model.value ] [] ]
-                , button [ type_ "button", onClick SetLocalStorageItem ] [ text "Set Item" ]
-                , button [ type_ "button", onClick SetCookie ] [ text "Set Cookie" ]
-                ]
-            ]
-        , div []
-            [ form []
-                [ label [] [ text "Key: ", input [ onInput EnteredGetItemKey, value model.keyForGetItem ] [] ]
-                , text <| "LocalStorage Item: " ++ model.receivedItem
-                , br [] []
-                , button [ type_ "button", onClick GetLocalStorageItem ] [ text "Get Item" ]
-                ]
-            ]
-        , div []
-            [ text <| "Cookies: " ++ model.cookies
-            , br [] []
-            , button [ type_ "button", onClick GetCookies ] [ text "Get Cookies" ]
-            ]
-        , div []
-            [ form []
-                [ label [] [ text "Key: ", input [ onInput EnteredRemoveItemKey, value model.keyForRemoveItem ] [] ]
-                , button [ type_ "button", onClick RemoveLocalStorageItem ] [ text "Remove Item" ]
-                , button [ type_ "button", onClick ClearLocalStorage ] [ text "Clear LocalStorage" ]
-                ]
-            ]
-        ]
+    case model of
+        Loading ->
+            text "Loading..."
+
+        Unavailable ->
+            text "Unavailable..."
+
+        Ready page ->
+            viewPage page
+
+
+viewPage : Page -> Html Msg
+viewPage page =
+    case page of
+        Landing ->
+            text "Landing Page"
+
+        FAQ ->
+            text "FAQ Page"
+
+        NotFound ->
+            text "Page Not Found"
+
+        Storage storageModel ->
+            Page.Storage.view storageModel
+                |> Html.map GotStorageMsg
+
+
+
+-- Subscriptions
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    gotPortMsg (JD.decodeValue portMsgDecoder >> GotPortMsg)
-
-
-
--- Ports
-
-
-port sendPortMsg : JE.Value -> Cmd msg
-
-
-port gotPortMsg : (JE.Value -> msg) -> Sub msg
+    Port.gotPortMsg (JD.decodeValue portMsgDecoder >> GotPortMsg)
 
 
 
@@ -217,10 +158,13 @@ portMsgDecoder_ : String -> JD.Decoder Msg
 portMsgDecoder_ method =
     case method of
         "gotLocalStorageItem" ->
-            JD.map GotLocalStorageItem (JD.field "payload" kvDecoder)
+            JD.map (Page.Storage.GotLocalStorageItem >> GotStorageMsg) (JD.field "payload" kvDecoder)
 
         "gotCookies" ->
-            JD.map GotCookies (JD.field "payload" (JD.field "cookies" JD.string))
+            JD.map (Page.Storage.GotCookies >> GotStorageMsg) (JD.field "payload" (JD.field "cookies" JD.string))
+
+        "connectedToServer" ->
+            JD.succeed ConnectedToServer
 
         _ ->
             JD.fail "Got unregistered method for port message"
@@ -231,6 +175,10 @@ kvDecoder =
     JD.map2 KV
         (JD.field "key" JD.string)
         (JD.field "value" JD.string)
+
+
+
+-- Main
 
 
 main : Program Flags Model Msg

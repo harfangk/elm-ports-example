@@ -47,6 +47,8 @@
           let cookie = `${msg.payload.key}=${msg.payload.value}`;
           document.cookie=cookie;
           break;
+        case 'connectToServer':
+          app.ports.gotPortMsg.send({method: 'connectedToServer', payload: null});
       }
     })
   </script>
