@@ -30,7 +30,7 @@
           localStorage.setItem(msg.payload.key, msg.payload.value);
           break;
         case 'getLocalStorageItem':
-          let value = localStorage.getItem(msg.payload) || 'null';
+          let value = localStorage.getItem(msg.payload);
           app.ports.gotPortMsg.send({method: 'gotLocalStorageItem', payload: {key: msg.payload, value: value}});
           break;
         case 'removeLocalStorageItem':
@@ -47,6 +47,8 @@
           let cookie = `${msg.payload.key}=${msg.payload.value}`;
           document.cookie=cookie;
           break;
+        case 'connectToServer':
+          app.ports.gotPortMsg.send({method: 'connectedToServer', payload: null});
       }
     })
   </script>
