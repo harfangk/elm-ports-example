@@ -1,4 +1,4 @@
-module Page.Storage exposing (Model, Msg(..), initModel, update, view)
+module Page.Storage exposing (Model, Msg(..), initModel, subscriptions, update, view)
 
 import Html exposing (Html, br, button, div, form, input, label, p, text)
 import Html.Attributes exposing (type_, value)
@@ -53,7 +53,7 @@ type Msg
     | SetCookie
     | GetCookies
     | GotCookies String
-    | GotLocalStorageItem { key : String, value : String }
+    | GotLocalStorageItem { key : String, value : Maybe String }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -72,76 +72,25 @@ update msg model =
             ( { model | value = value }, Cmd.none )
 
         SetLocalStorageItem ->
-            let
-                payload =
-                    JE.object
-                        [ ( "key", JE.string model.keyForSetItem )
-                        , ( "value", JE.string model.value )
-                        ]
-
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "setLocalStorageItem" )
-                        , ( "payload", payload )
-                        ]
-            in
-            ( model, Port.sendPortMsg portMsg )
+            ( model, Port.setLocalStorageItem { key = model.keyForSetItem, value = model.value } )
 
         GetLocalStorageItem ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "getLocalStorageItem" )
-                        , ( "payload", JE.string model.keyForGetItem )
-                        ]
-            in
-            ( model, Port.sendPortMsg portMsg )
+            ( model, Port.getLocalStorageItem model.keyForGetItem )
 
         ClearLocalStorage ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "clearLocalStorage" )
-                        ]
-            in
-            ( model, Port.sendPortMsg portMsg )
+            ( model, Port.clearLocalStorage () )
 
         RemoveLocalStorageItem ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "removeLocalStorageItem" )
-                        , ( "payload", JE.string model.keyForRemoveItem )
-                        ]
-            in
-            ( model, Port.sendPortMsg portMsg )
+            ( model, Port.removeLocalStorageItem model.keyForRemoveItem )
 
         GetCookies ->
-            let
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "getCookies" ) ]
-            in
-            ( model, Port.sendPortMsg portMsg )
+            ( model, Port.getCookies () )
 
         SetCookie ->
-            let
-                payload =
-                    JE.object
-                        [ ( "key", JE.string model.keyForSetItem )
-                        , ( "value", JE.string model.value )
-                        ]
-
-                portMsg =
-                    JE.object
-                        [ ( "method", JE.string "setCookie" )
-                        , ( "payload", payload )
-                        ]
-            in
-            ( model, Port.sendPortMsg portMsg )
+            ( model, Port.setCookie { key = model.keyForSetItem, value = model.value } )
 
         GotLocalStorageItem { key, value } ->
-            ( { model | receivedItem = key ++ "=" ++ value }, Cmd.none )
+            ( { model | receivedItem = key ++ "=" ++ Maybe.withDefault "null" value }, Cmd.none )
 
         GotCookies cookies ->
             ( { model | cookies = cookies }, Cmd.none )
@@ -182,4 +131,16 @@ view model =
                 , button [ type_ "button", onClick ClearLocalStorage ] [ text "Clear LocalStorage" ]
                 ]
             ]
+        ]
+
+
+
+-- Subscriptions
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Port.gotLocalStorageItem GotLocalStorageItem
+        , Port.gotCookies GotCookies
         ]
